@@ -266,11 +266,6 @@ def integration(variable):
             ps["Star"].m = m_Star*(1-beta)
             a_d_f[ind_inc], e_d_f[ind_inc] = ps[dust_hash.value].orbit(primary=ps['Star']).a, ps[dust_hash.value].orbit(primary=ps['Star']).e
             ps["Star"].m = m_Star
-
-            
-            
-            
-    hash_array, a_initial_array, e_initial_array, inc_initial_array, Omega_initial_array, pomega_initial_array, M_initial_array, CJ_final, x_p_f_xyz, v_p_f_xyz, x_d_f_xyz, v_d_f_xyz, final_fate, lifetime, a_d_f, e_d_f
              
         
     # outcome
