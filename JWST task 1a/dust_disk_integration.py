@@ -78,7 +78,7 @@ def integration(variable):
         np.random.seed()
         a_initial = k_init*a_Planet                   # Semi-major axis
         M_initial = (i-2)/(N_dust-1) * 2*np.pi        # Mean anomolay
-        sim.add(a=a_initial, e=e_initial, inc=inc_initial, Omega=Omega_initial, pomega=pomega_initial, M=M_initial) # fake add to obtain Cartesian coords
+        sim.add(a=a_initial, e=e_initial, inc=inc_initial, Omega=Omega_initial, pomega=pomega_initial, M=M_initial, primary=ps['Star']) # fake add to obtain Cartesian coords
         xi, yi, zi = ps[i].x, ps[i].y, ps[i].z
         vxi, vyi, vzi = np.sqrt(1-beta)*ps[i].vx, np.sqrt(1-beta)*ps[i].vy, np.sqrt(1-beta)*ps[i].vz # modify v in order for a circular orbit
         sim.remove(i)
