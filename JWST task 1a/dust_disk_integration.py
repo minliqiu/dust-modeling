@@ -29,7 +29,7 @@ def integration(variable):
     
     k1, k2, k_ap, beta, k_init, e_p, e_initial, inc_initial, Omega_initial, pomega_initial, endtime = variable
     
-    N_dust = 10
+    N_dust = 1000
     
     # define variables
     m_Star = k1 * m_Sun
