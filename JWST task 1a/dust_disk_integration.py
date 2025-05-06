@@ -29,7 +29,7 @@ def integration(variable):
     
     k1, k2, k_ap, beta, k_init, e_p, e_initial, inc_initial, Omega_initial, pomega_initial, endtime = variable
     
-    N_dust = 1000
+    N_dust = 10
     
     # define variables
     m_Star = k1 * m_Sun
@@ -63,7 +63,7 @@ def integration(variable):
     sim.add(m = m_Planet, a = a_Planet, e = e_p, r = R_Planet, hash = "Planet")
     sim.move_to_com()
     ps = sim.particles
-
+    
     # radiation force & PR-drag
     rebx = reboundx.Extras(sim)
     rf = rebx.load_force("radiation_forces")
@@ -84,21 +84,29 @@ def integration(variable):
         sim.remove(i)
         sim.add(x = xi, y = yi, z = zi, vx = vxi, vy = vyi, vz = vzi, hash=i) # real add
         ps[i].params["beta"] = beta
-        
-        hash_array[i-2] = ps[i].hash
+            
+        hash_array[i-2] = ps[i].hash.value # note: ps[i].hash remains the same even when particles with smaller indeces are removed; however, ps[i] changes as a continuous array
         a_initial_array[i-2] = a_initial
         e_initial_array[i-2] = e_initial
         inc_initial_array[i-2] = inc_initial
         Omega_initial_array[i-2] = Omega_initial
         pomega_initial_array[i-2] = pomega_initial
         M_initial_array[i-2] = M_initial
-            
 
+    
+    # Finds the particle in `sim.particles` with the given integer hash value.
+    def find_particle_by_hash(sim, target_hash_value):
+        for p in sim.particles:
+            if p.hash.value == target_hash_value:
+                return p
+        return None # if not found, then None
+
+    
     # Track fates
-    CJ_final = np.zeros(N_dust)
-    x_p_f_xyz, v_p_f_xyz = np.zeros(N_dust), np.zeros(N_dust) # planet final position and velocity
-    x_d_f_xyz, v_d_f_xyz = np.zeros(N_dust), np.zeros(N_dust) # dust final position and velocity
-    final_fate = np.zeros(N_dust)
+    CJ_final = np.zeros(N_dust)    
+    x_p_f_xyz, v_p_f_xyz = np.zeros((N_dust, 3)), np.zeros((N_dust, 3)) # planet final position and velocity
+    x_d_f_xyz, v_d_f_xyz = np.zeros((N_dust, 3)), np.zeros((N_dust, 3)) # dust final position and velocity
+    final_fate = np.empty(N_dust, dtype=object)
     lifetime = np.zeros(N_dust)
     a_d_f, e_d_f = np.zeros(N_dust), np.zeros(N_dust)
     vrel_f, mu_f = np.zeros(N_dust), np.zeros(N_dust) # np.array([np.nan]), np.array([np.nan]) # NaN by default when dust-planet collision doesn't happen
@@ -158,44 +166,47 @@ def integration(variable):
     
     # collision function
     def collision_function(sim_pointer, collision):
-        hash_Star = ps['Star'].hash
-        hash_Planet = ps['Planet'].hash
+        hash_Star = ps['Star'].hash.value
+        hash_Planet = ps['Planet'].hash.value
 
         simcontps = sim_pointer.contents.particles # get simulation object from pointer
-        hash_p1 = simcontps[collision.p1].hash
-        hash_p2 = simcontps[collision.p2].hash
-
+        hash_p1 = simcontps[collision.p1].hash.value
+        hash_p2 = simcontps[collision.p2].hash.value
+                
         # determine which particle is dust and its fate
         if hash_p1 == hash_Star or hash_p2 == hash_Star:
             fate = 'sublimation'
             dust_hash = hash_p2 if hash_p1 == hash_Star else hash_p1
-            ind_col = np.where(hash_array==dust_hash)[0]
+            ps_dust_col = find_particle_by_hash(sim, dust_hash)
+            ind_col = int(dust_hash-2) # find the index in hash_array
+            # don't need int(np.where(hash_array==dust_hash)[0])
             j = 2 if hash_p1 == hash_Star else 1 # remove dust
-            print(f'Sublimation: {dust_hash} at {sim.t/yr:.5f} [yr]')
+            print(f'Sublimation: dust {dust_hash} at {sim.t/yr:.5f} [yr]')
         else:
             fate = 'collision'
             dust_hash = hash_p2 if hash_p1 == hash_Planet else hash_p1
-            ind_col = np.where(hash_array==dust_hash)[0]
+            ps_dust_col = find_particle_by_hash(sim, dust_hash)
+            ind_col = int(dust_hash-2)
             # relative collision velocity and angle
             planet_xyz = np.array(ps['Planet'].xyz)
             planet_vxyz = np.array(ps['Planet'].vxyz)
-            dust_xyz = np.array(ps[2].xyz)
-            dust_vxyz = np.array(ps[2].vxyz)
+            dust_xyz = np.array(ps_dust_col.xyz)
+            dust_vxyz = np.array(ps_dust_col.vxyz)
             vrel, mu = compute_collision_info(planet_xyz, planet_vxyz, dust_xyz, dust_vxyz, R_Planet)
             vrel_f[ind_col] = vrel / 1e3  # km/s
             mu_f[ind_col] = mu
             
             j = 2 if hash_p1 == hash_Planet else 1 # remove dust
-            print(f'Hit the Planet: {dust_hash} at {sim.t/yr:.5f} [yr]')
-            
-        CJ_final[ind_col] = get_jacobi_const(sim, ps[dust_hash.value])
+            print(f'Hit the Planet: dust {dust_hash} at {sim.t/yr:.5f} [yr]')
+        
+        CJ_final[ind_col] = get_jacobi_const(sim, ps_dust_col)
         x_p_f_xyz[ind_col], v_p_f_xyz[ind_col] = ps['Planet'].xyz, ps['Planet'].vxyz # planet final position and velocity
-        x_d_f_xyz[ind_col], v_d_f_xyz[ind_col] = ps[dust_hash.value].xyz, ps[dust_hash.value].vxyz # dust final position and velocity
+        x_d_f_xyz[ind_col], v_d_f_xyz[ind_col] = ps_dust_col.xyz, ps_dust_col.vxyz # dust final position and velocity
         final_fate[ind_col] = fate
         lifetime[ind_col] = sim.t/yr
         
         ps["Star"].m = m_Star*(1-beta)
-        a_d_f[ind_col], e_d_f[ind_col] = ps[dust_hash.value].orbit(primary=ps['Star']).a, ps[dust_hash.value].orbit(primary=ps['Star']).e
+        a_d_f[ind_col], e_d_f[ind_col] = ps_dust_col.orbit(primary=ps['Star']).a, ps_dust_col.orbit(primary=ps['Star']).e
         ps["Star"].m = m_Star
         
         return j                            
@@ -229,25 +240,27 @@ def integration(variable):
         distance_pd_list = []
         for j in range(2, sim.N):
             E_ps_list.append(get_E(sim, ps[j]))
-            distance_pd_list.append(np.linalg.norm(ps[j].xyz-ps['Planet'].xyz))#  
+            distance_pd_list.append(np.linalg.norm(np.array(ps[j].xyz)-np.array(ps['Planet'].xyz)))#  
 
         index_ej = np.where((np.array(E_ps_list)>0) & (np.array(distance_pd_list)>10*a_Planet))[0] + 2
 
         l = 0 # count of dusts already removed in this round
         for k in range(len(index_ej)):
-            hash_ej = ps[int(index_ej[k])-l].hash
-            ind_ej = np.where(hash_array==hash_ej)[0]
-            CJ_final[ind_ej] = get_jacobi_const(sim, ps[dust_hash.value])
+            hash_ej = ps[int(index_ej[k])-l].hash.value
+            ps_dust_ej = find_particle_by_hash(sim, hash_ej)
+            ind_ej = int(hash_ej-2)
+            
+            CJ_final[ind_ej] = get_jacobi_const(sim, ps_dust_ej)
             x_p_f_xyz[ind_ej], v_p_f_xyz[ind_ej] = ps['Planet'].xyz, ps['Planet'].vxyz # planet final position and velocity
-            x_d_f_xyz[ind_ej], v_d_f_xyz[ind_ej] = ps[dust_hash.value].xyz, ps[dust_hash.value].vxyz # dust final position and velocity
+            x_d_f_xyz[ind_ej], v_d_f_xyz[ind_ej] = ps_dust_ej.xyz, ps_dust_ej.vxyz # dust final position and velocity
             final_fate[ind_ej] = fate
             lifetime[ind_ej] = sim.t/yr
 
             ps["Star"].m = m_Star*(1-beta)
-            a_d_f[ind_ej], e_d_f[ind_ej] = ps[dust_hash.value].orbit(primary=ps['Star']).a, ps[dust_hash.value].orbit(primary=ps['Star']).e
+            a_d_f[ind_ej], e_d_f[ind_ej] = ps_dust_ej.orbit(primary=ps['Star']).a, ps_dust_ej.orbit(primary=ps['Star']).e
             ps["Star"].m = m_Star
             
-            print ('Ejection:', str(ps[int(index_ej[k])-l].hash), 'at %.5f'%(sim.t/yr), '[yr]')
+            print ('Ejection: dust', hash_ej, 'at %.5f'%(sim.t/yr), '[yr]')
             sim.remove(int(index_ej[k])-l)
             l += 1
             
@@ -255,18 +268,21 @@ def integration(variable):
     # incomplete
     if sim.N != 2:
         for j in range(2, sim.N):
-            hash_inc = ps[j].hash
-            ind_inc = np.where(hash_array==hash_inc)[0]
-            CJ_final[ind_inc] = get_jacobi_const(sim, ps[dust_hash.value])
+            hash_inc = ps[j].hash.value
+            ps_dust_inc = find_particle_by_hash(sim, hash_inc)
+            ind_inc = int(hash_inc-2)
+            
+            CJ_final[ind_inc] = get_jacobi_const(sim, ps_dust_inc)
             x_p_f_xyz[ind_inc], v_p_f_xyz[ind_inc] = ps['Planet'].xyz, ps['Planet'].vxyz # planet final position and velocity
-            x_d_f_xyz[ind_inc], v_d_f_xyz[ind_inc] = ps[dust_hash.value].xyz, ps[dust_hash.value].vxyz # dust final position and velocity
-            final_fate[ind_inc] = fate
+            x_d_f_xyz[ind_inc], v_d_f_xyz[ind_inc] = ps_dust_inc.xyz, ps_dust_inc.vxyz # dust final position and velocity
+            final_fate[ind_inc] = 'incomplete'
             lifetime[ind_inc] = sim.t/yr
 
             ps["Star"].m = m_Star*(1-beta)
-            a_d_f[ind_inc], e_d_f[ind_inc] = ps[dust_hash.value].orbit(primary=ps['Star']).a, ps[dust_hash.value].orbit(primary=ps['Star']).e
+            a_d_f[ind_inc], e_d_f[ind_inc] = ps_dust_inc.orbit(primary=ps['Star']).a, ps_dust_inc.orbit(primary=ps['Star']).e
             ps["Star"].m = m_Star
-             
+         
+    print (x_p_f_xyz.shape)    
         
     # outcome
     data = {
@@ -285,10 +301,10 @@ def integration(variable):
     'pomega_initial': pomega_initial_array,
     'M_initial': M_initial_array,
     'CJ_final': CJ_final,
-    'x_p_f_xyz': x_p_f_xyz,
-    'v_p_f_xyz': v_p_f_xyz,
-    'x_d_f_xyz': x_d_f_xyz,
-    'v_d_f_xyz': v_d_f_xyz,
+    'x_p_f_xyz': [vec for vec in x_p_f_xyz], # flatten: a full [x, y, z] vector as a list
+    'v_p_f_xyz': [vec for vec in v_p_f_xyz],
+    'x_d_f_xyz': [vec for vec in x_d_f_xyz],
+    'v_d_f_xyz': [vec for vec in v_d_f_xyz],
     'final_fate': final_fate,
     'lifetime': lifetime,
     'a_d_f': a_d_f,
@@ -300,5 +316,3 @@ def integration(variable):
     df = pd.DataFrame(data)
     
     return df
-
-
