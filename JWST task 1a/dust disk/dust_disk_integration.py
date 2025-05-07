@@ -37,18 +37,28 @@ def integration(variable):
     R_melt = (T_Star/T_melt)**2 * R_Star/2
     R_sub = max(R_melt, R_Star)
     # L_Star = k1**3.5 * L_Sun
-
     R_sub_To_R_Sun = R_sub/R_Sun
-    
-    m_Planet = k2 * m_J
-
-    # Chen & Kipping (2017) https://ui.adsabs.harvard.edu/abs/2017ApJ...834...17C/abstract
-    if k2 <= 0.41:
-        R_Planet = R_E * (m_Planet/m_E)**(0.59) # low-mass planet; scale with Earth
-    else:
-        R_Planet = R_J * k2**(-0.04) # massive planet; scale with Jupiter
-
     a_Planet = k_ap * R_Sun
+
+    # planet M-R relation model
+    # Chen & Kipping (2017) https://ui.adsabs.harvard.edu/abs/2017ApJ...834...17C/abstract
+    m_Planet = k2 * m_J
+    m_Planet_E = m_Planet / m_E  # mass in Earth masses
+    # mass thresholds in Jupiter mass units
+    k2_terr = 2.04 / (m_J / m_E)  # ~0.00642
+    k2_nep = 132.7 / (m_J / m_E)  # ~0.4178
+
+    if k2 <= k2_terr:
+        R_Planet = R_E * m_Planet_E**0.28 # rocky planet; steeper
+    elif k2 <= k2_nep:
+        # prefactor for continuity
+        factor = (2.04)**(0.28 - 0.59)
+        R_Planet = R_E * factor * m_Planet_E**0.59 # ice giant / Neptune-like; radius shrinks faster with decreasing mass
+    else:
+        # prefactor for continuity
+        factor = (2.04)**(0.28 - 0.59) * (132.7)**(0.59 - (-0.04))
+        R_Planet = R_E * factor * m_Planet_E**(-0.04) # gas giant; nearly flat
+    
     
     # start rebound
     sim = rebound.Simulation()
@@ -319,5 +329,3 @@ def integration(variable):
     df = pd.DataFrame(data)
     
     return df
-
-
